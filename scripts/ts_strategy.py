@@ -55,7 +55,7 @@ class AdvancedDirectionalStrategyExample(ScriptStrategyBase):
         time_limit=60 * 6,
     )
     trading_pair = "ETH-USDT"
-    exchange = "binance_perpetual"
+    exchange = "binance_perpetual_testnet"
 
     eth_1m_candles = CandlesFactory.get_candle(connector=exchange,
                                                trading_pair=trading_pair,
@@ -121,28 +121,17 @@ class AdvancedDirectionalStrategyExample(ScriptStrategyBase):
         self.clean_and_store_executors()
 
     def get_signal(self):
-        values = {}
-
         for candle_name, candle in self.candles.items():
-            candle_df = candle.candles_df
-            # Let's add some technical indicators
-            candle_df.ta.bbands(length=21, append=True)
-            candle_df.ta.rsi(length=21, append=True)
-            candle_df.ta.sma(length=10, close="RSI_21", prefix="RSI_21", append=True)
-            last_row = candle_df.iloc[-1]
-            # We are going to normalize the values of the signals between -1 and 1.
-            # -1 --> short | 1 --> long, so in the normalization we also need to switch side by changing the sign
-            sma_rsi_normalized = -1 * (last_row["RSI_21_SMA_10"].item() - 50) / 50
-            bb_percentage_normalized = -1 * (last_row["BBP_21_2.0"].item() - 0.5) / 0.5
-            # we assume that the weigths of sma of rsi and bb are equal
-            signal_value = (sma_rsi_normalized + bb_percentage_normalized) / 2
-            values[candle_name] = signal_value
-        # Here we have a dictionary with the values of the signals for each candle
-        # The idea is that you can define rules between the signal values of multiple trading pairs or timeframes
-        # In this example, we are going to prioritize the short term signal, so the weight of the 1m candle
-        # is going to be 0.7 and the weight of the 1h candle 0.3
-        composed_signal_value = 0.7 * values["ETH-USDT_1m"] + 0.3 * values["ETH-USDT_3m"]
-        return composed_signal_value
+            candle_df = self.ft.add_features(candle.candles_df, self.model_metadata['add_features_dict'])
+            predict = self.model.predict(candle_df)[-1]
+            predict_proba = self.model.predict_proba(candle_df).max()
+            if predict == 1:
+                value = 0
+            elif predict == 2:
+                value = predict_proba
+            else:
+                value = -predict_proba
+        return value
 
     def on_stop(self):
         """
