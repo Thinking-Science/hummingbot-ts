@@ -45,17 +45,17 @@ class AdvancedDirectionalStrategyExample(ScriptStrategyBase):
     IMPORTANT: Binance perpetual has to be in Single Asset Mode, soon we are going to support Multi Asset Mode.
     """
     bot_profile = BotProfile(
-        order_amount_usd=Decimal(10),
+        order_amount_usd=Decimal(100),
         long_threshold=0.5,
         short_threshold=-0.5,
-        leverage=1,
+        leverage=5,
         max_executors=1,
-        stop_loss=0.001,
-        take_profit=0.002,
-        time_limit=60 * 6,
+        stop_loss=0.002,
+        take_profit=0.004,
+        time_limit=60 * 2,
     )
-    trading_pair = "ETH-USDT"
-    exchange = "binance_perpetual_testnet"
+    trading_pair = "ETH-BUSD"
+    exchange = "binance_perpetual"
 
     eth_1m_candles = CandlesFactory.get_candle(connector=exchange,
                                                trading_pair=trading_pair,
@@ -122,7 +122,7 @@ class AdvancedDirectionalStrategyExample(ScriptStrategyBase):
 
     def get_signal(self):
         for candle_name, candle in self.candles.items():
-            candle_df = self.ft.add_features(candle.candles_df, self.model_metadata['add_features_dict'])
+            candle_df = self.ft.add_features(candle.candles_df, self.model_metadata['ADD_FEATURES_DICT'], dropna=True)
             predict = self.model.predict(candle_df)[-1]
             predict_proba = self.model.predict_proba(candle_df).max()
             if predict == 1:
@@ -171,28 +171,13 @@ class AdvancedDirectionalStrategyExample(ScriptStrategyBase):
             lines.extend([
                 "\n############################################ Market Data ############################################\n"])
             lines.extend([f"Value: {self.get_signal()}"])
-            values = {}
-            columns_to_show = ["timestamp", "open", "low", "high", "close", "volume", "BBP_21_2.0", "RSI_21_SMA_10"]
+            columns_to_show = ["timestamp", "open", "low", "high", "close", "volume", "RSI_14", "RSI_14_SIDE", "MACD_12_26_9", "MACD_12_26_9_SIDE"]
             for candle_name, candles in self.candles.items():
-                candles_df = candles.candles_df
-                # Let's add some technical indicators
-                candles_df.ta.bbands(length=21, append=True)
-                candles_df.ta.rsi(length=21, append=True)
-                candles_df.ta.sma(length=10, close="RSI_21", prefix="RSI_21", append=True)
-                candles_df["timestamp"] = pd.to_datetime(candles_df["timestamp"], unit="ms")
+                candles_df = self.ft.add_features(candles.candles_df, self.model_metadata['ADD_FEATURES_DICT'], dropna=True)
+                candles_df.loc[:, "timestamp"] = pd.to_datetime(candles_df["timestamp"], unit="ms")
                 lines.extend([f"Candles: {candles.name} | Interval: {candles.interval}\n"])
                 lines.extend(["    " + line for line in candles_df[columns_to_show].tail().to_string(index=False).split("\n")])
-                last_row = candles_df.iloc[-1]
-                sma_rsi_normalized = -1 * (last_row["RSI_21_SMA_10"].item() - 50) / 50
-                bb_percentage_normalized = -1 * (last_row["BBP_21_2.0"].item() - 0.5) / 0.5
-                signal_value = (sma_rsi_normalized + bb_percentage_normalized) / 2
-                values[candle_name] = signal_value
-                lines.extend([f"""
-Normalized SMA RSI = {sma_rsi_normalized}
-BB% Normalized = {bb_percentage_normalized}
-Signal Value: {signal_value}
-"""])
-            lines.extend([f"Consolidated Signal = {0.7 * values['ETH-USDT_1m'] + 0.3 * values['ETH-USDT_3m']}"])
+
             lines.extend(["\n-----------------------------------------------------------------------------------------------------------\n"])
         else:
             lines.extend(["", "  No data collected."])
